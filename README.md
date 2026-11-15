@@ -1,6 +1,25 @@
-# CleanFrame
+# CleanFrame (LG webOS & Samsung Tizen)
 
-A quieter home screen for Samsung The Frame. Your apps, a photograph and the time, with an interface made for the TV remote.
+A quieter home screen for LG webOS TVs (`dist-webos/`) and Samsung The Frame (`app/`). Your apps, a clean dark/light or photograph background and the time, with an interface made for the TV remote.
+
+## LG webOS Port (`dist-webos/`)
+
+`dist-webos/` contains a complete port of CleanFrame for **LG webOS (tested on webOS 7.6.0 / 43UQ75003LF)**:
+- Uses native LG webOS Luna Service (`webOSTV.js` / `PalmServiceBridge` → `luna://com.webos.applicationManager/launch`) and LG Connect SDK / SSAP (`ws://127.0.0.1:3000` → `ssap://com.webos.applicationManager/listLaunchPoints`) to discover all installed TV apps (including regional apps such as VOYO, AntenaPlay, Max, Netflix, YouTube, Disney+, Prime Video, Stremio, Spotify, and HDMI 1–3).
+- Maps the LG Magic Remote Back key (`461`) with `"disableBackHistoryAPI": true`.
+- Defaults to a clean Dark background (`bg: 'dark'`).
+
+### Package, install and launch on LG webOS TV
+
+With `@webos-tools/cli` configured for your TV in Developer Mode:
+
+```sh
+ares-package dist-webos
+ares-install com.moldy.cleanframe_1.0.0_all.ipk
+ares-launch com.moldy.cleanframe
+```
+
+---
 
 ![CleanFrame browser preview using the bundled Manrope font](docs/images/cleanframe-dock.jpg)
 
