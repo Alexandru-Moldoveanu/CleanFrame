@@ -7,6 +7,11 @@
   "title": "CleanFrame",
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
+  "bgColor": "#0c0d0f",
+  "resolution": "1920x1080",
+  "noSplashOnLaunch": true,
+  "spinnerOnLaunch": false,
+  "handlesRelaunch": true,
   "disableBackHistoryAPI": true,
   "requiredPermissions": [
     "application.operation",

@@ -47,9 +47,9 @@
   var LOOK_VALUES = { bg: ['dark', 'light', 'photo'], layout: ['list', 'dock'], apps: ['icons', 'both', 'text'], font: Object.keys(FONTS).filter(function (id) { return id === 'manrope' || PRIVATE_FONTS.indexOf(id) >= 0; }), controls: ['icons', 'both', 'text'], focus: ['type', 'glass'], material: ['soft', 'frost', 'tint'] };
   var LOOK_NAMES = { bg: 'Background', layout: 'Layout', apps: 'Apps', font: 'Font', controls: 'Home controls', focus: 'Focus', material: 'Material' };
   var VALUE_NAMES = { dark: 'Dark', light: 'Light', photo: 'Photo', list: 'List', dock: 'Dock', type: 'Type', glass: 'Glass', soft: 'Soft', frost: 'Frost', tint: 'Clear tint', icons: 'Icons', both: 'Icons and text', text: 'Text' };
-  var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], arrange: ['Arrange', 'arrange'], settings: ['Settings', 'settings'] };
+  var UTIL = { art: ['LG TV', 'tv'], apps: ['All apps', 'apps'], arrange: ['Arrange', 'arrange'], settings: ['Settings', 'settings'] };
   var MSG = {
-    leave: { title: 'Leave Home?', line: 'Open Samsung Home?', note: '', actions: [['stay', 'Stay'], ['samsung', 'Samsung Home']] }
+    leave: { title: 'LG TV Menu', line: 'Switch to Live TV, LG Settings or exit CleanFrame.', note: 'Choose Stay or press Back to remain in CleanFrame.', actions: [['stay', 'Stay'], ['samsung', 'Live TV'], ['lgsettings', 'LG Settings'], ['exit', 'Exit']] }
   };
   var SVG = {
     art: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.8" r="1.5"/><path d="m4.5 17.5 4.5-4.5 3 3 2.5-2.5 5 5"/>',
@@ -445,7 +445,7 @@
   var busy = false, busyTimer = 0;
   function release() { busy = false; clearTimeout(busyTimer); S.press = null; }
   function message(title, line, note) {
-    push({ id: 'message', msg: 'error', content: { title: title, line: line, note: note || '', actions: [['back', 'Back']] }, f: { b: 0 } });
+    push({ id: 'message', msg: 'error', content: { title: title, line: line, note: note || 'You can stay in CleanFrame or switch to native LG TV controls below.', actions: [['back', 'Stay'], ['samsung', 'Live TV'], ['lgsettings', 'LG Settings'], ['exit', 'Exit']] }, f: { b: 0 } });
   }
   function perform(title, run) {
     if (busy) return;
@@ -463,9 +463,9 @@
     S.press = id; S.lastLaunch = a.name;
     perform(a.name, function (done) { FrameDevice.launchApp(a.appId, done); });
   }
-  function refreshCatalog() {
+  function refreshCatalog(force) {
     var request, oldFocus;
-    if (catalog.loading) return;
+    if (catalog.loading && !force) return;
     request = ++catalog.request; catalog.loading = true; catalog.error = null;
     FrameDevice.apps(function (err, entries) {
       if (request !== catalog.request) return;
@@ -497,7 +497,7 @@
       catalog.loaded = true; catalog.error = null; catalog.revision++;
       if (top().id === 'apps' && oldFocus && ALPHA.indexOf(oldFocus) >= 0) top().f.i = ALPHA.indexOf(oldFocus);
       norm(); render();
-    });
+    }, !!force);
   }
 
   /* ---------- Navigation targets ---------- */
@@ -508,7 +508,7 @@
     return { prev: v ? 'up' : 'left', next: v ? 'down' : 'right', out: v ? 'right' : 'up', inn: v ? 'left' : 'down' };
   }
   function utilAction(u) {
-    if (u === 'art') perform('Art Mode', FrameDevice.art);
+    if (u === 'art') { S.settingsFocus = 'samsung'; openAppearance('samsung'); }
     else if (u === 'apps') openApps();
     else openSettings();
   }
@@ -522,12 +522,12 @@
   function openMessage(key) { push({ id: 'message', msg: key, f: { b: 0 } }); }
   function openApps() {
     var e = { id: 'apps', mode: 'browse', top: 0, f: { zone: 'grid', i: Math.max(0, ALPHA.indexOf(S.appsFocus)), h: 0 } };
-    push(e); refreshCatalog(); return e;
+    push(e); if (!catalog.loaded) refreshCatalog(false); return e;
   }
   function openEditor(origin) {
     var i = ensureSel();
     clearSession();
-    refreshCatalog();
+    if (!catalog.loaded) refreshCatalog(false);
     push({ id: 'editor', origin: origin, lifted: null, top: 0, otherReturn: { id: otherList()[0] || null, index: 0, top: 0 }, f: { zone: S.c.home.length ? 'home' : 'other', i: Math.max(0, i), part: 'name', h: 1, j: 0 } });
   }
   function openWallpaper() {
@@ -556,7 +556,7 @@
       }
       f.zone = 'apps';
       if (k === x.out) { f.zone = 'util'; f.u = clamp(S.lastUtil, 0, U.length - 1); }
-      else if (k === 'back') return;
+      else if (k === 'back') openMessage('leave');
       else if (!h.length) { if (k === 'ok') addAppsRoute(); }
       else if (k === x.prev && i > 0) setSel(h[i - 1]);
       else if (k === x.next && i < h.length - 1) setSel(h[i + 1]);
@@ -585,7 +585,7 @@
     if (k === 'up' && i > 0) setSel(h[i - 1]);
     else if (k === 'right') { f.zone = 'util'; f.u = clamp(S.lastUtil, 0, U.length - 1); }
     else if (k === 'down' && i < h.length - 1) setSel(h[i + 1]);
-    else if (k === 'back') return;
+    else if (k === 'back') openMessage('leave');
     else if (k === 'ok') { if (h.length) launch(S.sel); else addAppsRoute(); }
   }
 
@@ -883,12 +883,14 @@
       reason: flat ? 'Choose Photo in Background to use rotation.' : 'Timed changes pause while Settings or another panel is open.' }];
     return [{ id: 'samsung', title: '', items: [
       { action: 'samsung.home', label: 'Live TV', description: 'Open Live TV' },
-      { action: 'samsung.settings', label: 'TV settings', description: 'Picture, sound and network settings' },
-      { action: 'samsung.inputs', label: 'HDMI Inputs', description: 'Switch to HDMI 1, HDMI 2 or HDMI 3' }
+      { action: 'samsung.inputs', label: 'HDMI Inputs', description: 'Switch to HDMI 1, HDMI 2 or HDMI 3' },
+      { action: 'samsung.settings', label: 'LG TV settings', description: 'Picture, sound and network settings' },
+      { action: 'samsung.rescan', label: 'Refresh installed apps', description: 'Re-scan apps installed on the TV' },
+      { action: 'samsung.exit', label: 'Exit CleanFrame', description: 'Return to the native LG screen' }
     ] }];
   }
   function detailRows(t) {
-    var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }]];
+    var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'LG TV & HDMI' : 'Back' }]];
     detailSections(t).forEach(function (section) {
       var enabled = section.items.filter(function (item) { return !item.disabled; });
       if (section.horizontal && enabled.length) rows.push(enabled);
@@ -939,9 +941,11 @@
     else if (item.axis) { patch[item.axis] = item.value; setLook(patch, { row: item.axis }); }
     else if (item.action === 'background.wallpaper') openWallpaper();
     else if (item.action === 'background.rotation') openAppearance('rotation');
-    else if (item.action === 'samsung.home') perform('Samsung Home', FrameDevice.home);
+    else if (item.action === 'samsung.home') perform('Live TV', FrameDevice.home);
     else if (item.action === 'samsung.settings') perform('TV settings', FrameDevice.settings);
     else if (item.action === 'samsung.inputs') openInputs();
+    else if (item.action === 'samsung.rescan') { refreshCatalog(true); detailBack(); openApps(); }
+    else if (item.action === 'samsung.exit' && FrameDevice.exit) perform('Exit CleanFrame', FrameDevice.exit);
     else if (item.action === 'inputs.retry') loadInputs(t);
     else if (item.action.indexOf('input.') === 0) perform(item.label, function (done) {
       FrameDevice.setSource(Number(item.action.slice(6)), function (err) {
@@ -990,7 +994,13 @@
       if (k === 'left') t.f.b = Math.max(0, t.f.b - 1);
       else if (k === 'right') t.f.b = Math.min(A.length - 1, t.f.b + 1);
       else if (k === 'back') pop();
-      else if (k === 'ok') { a = A[t.f.b][0]; pop(); if (a === 'samsung') perform('Samsung Home', FrameDevice.home); }
+      else if (k === 'ok') {
+        a = A[t.f.b][0];
+        pop();
+        if (a === 'samsung') perform('Live TV', FrameDevice.home);
+        else if (a === 'lgsettings') perform('TV settings', FrameDevice.settings);
+        else if (a === 'exit' && FrameDevice.exit) perform('Exit CleanFrame', FrameDevice.exit);
+      }
     },
     point: function (t, z, i) { if (z === 'act') { t.f.b = i; this.key(t, 'ok'); } }
   };
@@ -1428,7 +1438,7 @@
         + ' data-z="detail" data-i="0" data-id="' + item.action + '" data-action="' + item.action + '">' + inner
         + (item.axis ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
     }
-    setHTML(appearanceBack, command({ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }, icon('left') + '<span>' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') + '</span>', 'setting-back'));
+    setHTML(appearanceBack, command({ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'LG TV & HDMI' : 'Back' }, icon('left') + '<span>' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'LG TV & HDMI' : 'Back') + '</span>', 'setting-back'));
     setHTML(appearanceRows, detailSections(t).map(function (section) {
       return '<section class="setting-section' + (section.horizontal ? ' is-horizontal' : '') + ' section-' + section.id + '">'
         + (section.title ? '<h3 class="setting-label" id="setting-' + section.id + '">' + section.title + '</h3>' : '')
@@ -1891,6 +1901,15 @@
       if (S.c.bg === 'photo' && !S.pending && !S.previewBundle && (!committedBundle || S.bundleKey !== bundleKey(S.c))) setLook({}, { transient: true, startup: true });
       refreshInputsOnReturn(); after(); updateClock(); focusStage();
     }
+  });
+  document.addEventListener('webOSRelaunch', function () {
+    heldKeys = {};
+    FrameDevice.cancelSource();
+    release();
+    refreshInputsOnReturn();
+    after();
+    updateClock();
+    focusStage();
   });
   window.addEventListener('resize', fit);
 

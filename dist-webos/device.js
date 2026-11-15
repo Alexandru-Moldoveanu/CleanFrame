@@ -170,6 +170,7 @@
 
   var discoveredByBrand = {};
   var discoveredById = {};
+  var memoryCachedPoints = null;
   var activeBridges = {};
   var nextBridgeId = 1;
 
@@ -282,17 +283,25 @@
 
   function normalizeIcon(path) {
     if (!path || typeof path !== 'string') return '';
+    if (/^(?:\/media\/|file:\/\/\/media\/|\/usr\/|file:\/\/\/usr\/)/.test(path)) return '';
     if (/^(?:\/[^\/]|file:\/\/\/|wgt-package:\/\/\/)/.test(path)) return path;
     if (/^file:\/\//.test(path)) return 'file:///' + path.replace(/^file:\/\/+/, '');
     return '';
   }
 
   function loadCachedLaunchPoints() {
+    if (Array.isArray(memoryCachedPoints) && memoryCachedPoints.length > 0) {
+      return memoryCachedPoints;
+    }
     try {
       var raw = localStorage.getItem(APPS_CACHE_STORAGE);
       if (!raw) return [];
       var parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryCachedPoints = parsed;
+        return parsed;
+      }
+      return [];
     } catch (e) {
       return [];
     }
@@ -301,6 +310,7 @@
   function saveCachedLaunchPoints(points) {
     try {
       if (Array.isArray(points) && points.length > 0) {
+        memoryCachedPoints = points;
         localStorage.setItem(APPS_CACHE_STORAGE, JSON.stringify(points));
       }
     } catch (e) { /* ignore */ }
@@ -383,38 +393,39 @@
     };
   }
 
-  function listLaunchPointsRaw(done) {
+  function listLaunchPointsRaw(done, forceRefresh) {
+    var cached = loadCachedLaunchPoints();
+    if (!forceRefresh && cached.length > 0) {
+      done(null, cached);
+      return;
+    }
     var wos = ensureWebOS();
     if (!wos) {
-      done(null, loadCachedLaunchPoints());
+      done(null, cached);
       return;
     }
     var finish = bounded(done, 18000);
-    try {
-      wos.service.request('luna://com.webos.applicationManager/listLaunchPoints', {
-        parameters: {},
-        onSuccess: function (res) {
-          var points = (res && Array.isArray(res.launchPoints)) ? res.launchPoints : [];
-          if (points.length > 0) {
-            saveCachedLaunchPoints(points);
-            finish(null, points);
-            return;
+    fetchLaunchPointsViaSSAP(function (ssapErr, ssapPoints) {
+      if (ssapPoints && ssapPoints.length > 0) {
+        finish(null, ssapPoints);
+        return;
+      }
+      try {
+        wos.service.request('luna://com.webos.applicationManager/listLaunchPoints', {
+          parameters: {},
+          onSuccess: function (res) {
+            var points = (res && Array.isArray(res.launchPoints)) ? res.launchPoints : [];
+            if (points.length > 0) saveCachedLaunchPoints(points);
+            finish(null, points.length > 0 ? points : cached);
+          },
+          onFailure: function () {
+            finish(null, cached);
           }
-          fetchLaunchPointsViaSSAP(function (ssapErr, ssapPoints) {
-            finish(null, ssapPoints && ssapPoints.length ? ssapPoints : loadCachedLaunchPoints());
-          });
-        },
-        onFailure: function () {
-          fetchLaunchPointsViaSSAP(function (ssapErr, ssapPoints) {
-            finish(null, ssapPoints && ssapPoints.length ? ssapPoints : loadCachedLaunchPoints());
-          });
-        }
-      });
-    } catch (err) {
-      fetchLaunchPointsViaSSAP(function (ssapErr, ssapPoints) {
-        finish(null, ssapPoints && ssapPoints.length ? ssapPoints : loadCachedLaunchPoints());
-      });
-    }
+        });
+      } catch (err) {
+        finish(null, cached);
+      }
+    });
   }
 
   function candidateIdsFor(id) {
@@ -547,16 +558,31 @@
   function home(done) {
     launchApp('com.webos.app.livetv', function (err) {
       if (!err) { done(null); return; }
-      try { window.close(); done(null); }
-      catch (e) { done(failure(err)); }
+      exit(done);
     });
+  }
+
+  function exit(done) {
+    try {
+      if (window.PalmSystem && typeof window.PalmSystem.platformBack === 'function') {
+        window.PalmSystem.platformBack();
+        if (typeof done === 'function') done(null);
+        return;
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      window.close();
+      if (typeof done === 'function') done(null);
+      return;
+    } catch (e) { /* ignore */ }
+    launchApp('com.webos.app.livetv', done);
   }
 
   function settings(done) {
     launchApp('com.palm.app.settings', done);
   }
 
-  function apps(done) {
+  function apps(done, forceRefresh) {
     var finish = bounded(done, 20000);
     var primaryKeys = Object.keys(IDS);
     listLaunchPointsRaw(function (err, list) {
@@ -603,7 +629,7 @@
         return a.rank - b.rank || a.name.toLowerCase().localeCompare(b.name.toLowerCase());
       });
       finish(null, result);
-    });
+    }, !!forceRefresh);
   }
 
   window.FrameDevice = {
@@ -611,6 +637,7 @@
     launchApp: launchApp,
     art: art,
     home: home,
+    exit: exit,
     settings: settings,
     apps: apps,
     sources: sources,
